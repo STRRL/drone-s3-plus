@@ -6,12 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/mattn/go-zglob"
+	log "github.com/sirupsen/logrus"
 )
 
 // Plugin defines the S3 plugin parameters.
@@ -20,6 +21,9 @@ type Plugin struct {
 	Key      string
 	Secret   string
 	Bucket   string
+
+	// overwrite object
+	Overwrite bool
 
 	// if not "", enable server-side encryption
 	// valid values are:
@@ -97,7 +101,8 @@ func (p *Plugin) Exec() error {
 		log.Warn("AWS Key and/or Secret not provided (falling back to ec2 instance profile)")
 	}
 
-	client := s3.New(session.New(), conf)
+	sess := session.Must(session.NewSession(conf))
+	client := s3.New(sess)
 
 	// find the bucket
 	log.WithFields(log.Fields{
@@ -148,6 +153,33 @@ func (p *Plugin) Exec() error {
 		if p.DryRun {
 			continue
 		}
+
+		/* ############### */
+		if !p.Overwrite {
+			_, err := client.HeadObject(&s3.HeadObjectInput{
+				Bucket: aws.String(p.Bucket),
+				Key:    aws.String(target),
+			})
+
+			if err == nil {
+				log.WithFields(log.Fields{
+					"target": target,
+				}).Warn("target exist")
+				continue
+			}
+
+			awsErr, ok := err.(awserr.Error)
+			if ok == false || awsErr.Code() != "NotFound" {
+				log.WithFields(log.Fields{
+					"target": target,
+					"error":  awsErr,
+				}).Error("HeadObject failed")
+
+				return err
+			}
+		}
+
+		/* ############### */
 
 		f, err := os.Open(match)
 		if err != nil {

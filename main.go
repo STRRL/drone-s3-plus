@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/joho/godotenv"
+	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
 
@@ -80,6 +80,11 @@ func main() {
 			EnvVar: "PLUGIN_ENCRYPTION",
 		},
 		cli.BoolFlag{
+			Name:   "overwrite",
+			Usage:  "overwrite object",
+			EnvVar: "PLUGIN_OVERWRITE,S3_OVERWRITE",
+		},
+		cli.BoolFlag{
 			Name:   "dry-run",
 			Usage:  "dry run for debug purposes",
 			EnvVar: "PLUGIN_DRY_RUN",
@@ -125,6 +130,7 @@ func run(c *cli.Context) error {
 		CacheControl: c.String("cache-control"),
 		PathStyle:    c.Bool("path-style"),
 		DryRun:       c.Bool("dry-run"),
+		Overwrite:    c.Bool("overwrite"),
 	}
 
 	return plugin.Exec()

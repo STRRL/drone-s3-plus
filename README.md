@@ -1,9 +1,9 @@
-# drone-s3
+# drone-s3-plus
 
-[![Build Status](http://beta.drone.io/api/badges/drone-plugins/drone-s3/status.svg)](http://beta.drone.io/drone-plugins/drone-s3)
-[![Go Doc](https://godoc.org/github.com/drone-plugins/drone-s3?status.svg)](http://godoc.org/github.com/drone-plugins/drone-s3)
-[![Go Report](https://goreportcard.com/badge/github.com/drone-plugins/drone-s3)](https://goreportcard.com/report/github.com/drone-plugins/drone-s3)
-[![Join the chat at https://gitter.im/drone/drone](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/drone/drone)
+fork from https://github.com/drone-plugins/drone-s3
+
+## Changes
+- add overwrite option(default true)
 
 Drone plugin to publish files and artifacts to Amazon S3 or Minio. For the
 usage information and a listing of the available options please take a look at
@@ -49,4 +49,8 @@ docker run --rm \
   -v $(pwd):$(pwd) \
   -w $(pwd) \
   plugins/s3 --dry-run
+```
+
+```
+  AWS_ACCESS_KEY_ID=K3V27FPQO9FCN58IK4FY AWS_SECRET_ACCESS_KEY=bBNVauNe9EAIXH89NkBmJW2Z82huT9DvuDw85kir
 ```
