@@ -4,10 +4,11 @@ import (
 	"mime"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
@@ -54,6 +55,9 @@ type Plugin struct {
 	// Sets the Cache-Control header on each uploaded object
 	CacheControl string
 
+	// upload files
+	Parallel int
+
 	// Copies the files from the specified directory.
 	// Regexp matching will apply to match multiple
 	// files
@@ -78,6 +82,82 @@ type Plugin struct {
 	PathStyle bool
 	// Dry run without uploading/
 	DryRun bool
+}
+
+func (p *Plugin) Upload(cli *s3.S3, match string) error {
+	stat, err := os.Stat(match)
+	if err != nil {
+		return err // should never happen
+	}
+
+	// skip directories
+	if stat.IsDir() {
+		return nil
+	}
+
+	target := filepath.Join(p.Target, strings.TrimPrefix(match, p.StripPrefix))
+	if !strings.HasPrefix(target, "/") {
+		target = "/" + target
+	}
+
+	// amazon S3 has pretty crappy default content-type headers so this pluign
+	// attempts to provide a proper content-type.
+	content := contentType(match)
+
+	// log file for debug purposes.
+	log.WithFields(log.Fields{
+		"name":         match,
+		"bucket":       p.Bucket,
+		"target":       target,
+		"content-type": content,
+	}).Info("Uploading file")
+
+	// when executing a dry-run we exit because we don't actually want to
+	// upload the file to S3.
+	if p.DryRun {
+		return nil
+	}
+
+	f, err := os.Open(match)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err,
+			"file":  match,
+		}).Error("Problem opening file")
+		return err
+	}
+
+	defer f.Close()
+
+	putObjectInput := &s3.PutObjectInput{
+		Body:        f,
+		Bucket:      &(p.Bucket),
+		Key:         &target,
+		ACL:         &(p.Access),
+		ContentType: &content,
+	}
+
+	if p.Encryption != "" {
+		putObjectInput.ServerSideEncryption = &(p.Encryption)
+	}
+
+	if p.CacheControl != "" {
+		putObjectInput.CacheControl = &(p.CacheControl)
+	}
+
+	_, err = cli.PutObject(putObjectInput)
+
+	if err != nil {
+		log.WithFields(log.Fields{
+			"name":   match,
+			"bucket": p.Bucket,
+			"target": target,
+			"error":  err,
+		}).Error("Could not upload file")
+		return err
+	}
+
+	return f.Close()
 }
 
 // Exec runs the plugin
@@ -119,108 +199,31 @@ func (p *Plugin) Exec() error {
 		return err
 	}
 
-	for _, match := range matches {
-
-		stat, err := os.Stat(match)
-		if err != nil {
-			continue // should never happen
-		}
-
-		// skip directories
-		if stat.IsDir() {
-			continue
-		}
-
-		target := filepath.Join(p.Target, strings.TrimPrefix(match, p.StripPrefix))
-		if !strings.HasPrefix(target, "/") {
-			target = "/" + target
-		}
-
-		// amazon S3 has pretty crappy default content-type headers so this pluign
-		// attempts to provide a proper content-type.
-		content := contentType(match)
-
-		// log file for debug purposes.
-		log.WithFields(log.Fields{
-			"name":         match,
-			"bucket":       p.Bucket,
-			"target":       target,
-			"content-type": content,
-		}).Info("Uploading file")
-
-		// when executing a dry-run we exit because we don't actually want to
-		// upload the file to S3.
-		if p.DryRun {
-			continue
-		}
-
-		/* ############### */
-		if !p.Overwrite {
-			_, err := client.HeadObject(&s3.HeadObjectInput{
-				Bucket: aws.String(p.Bucket),
-				Key:    aws.String(target),
-			})
-
-			if err == nil {
-				log.WithFields(log.Fields{
-					"target": target,
-				}).Warn("target exist")
-				continue
-			}
-
-			awsErr, ok := err.(awserr.Error)
-			if ok == false || awsErr.Code() != "NotFound" {
-				log.WithFields(log.Fields{
-					"target": target,
-					"error":  awsErr,
-				}).Error("HeadObject failed")
-
-				return err
-			}
-		}
-
-		/* ############### */
-
-		f, err := os.Open(match)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"error": err,
-				"file":  match,
-			}).Error("Problem opening file")
-			return err
-		}
-		defer f.Close()
-
-		putObjectInput := &s3.PutObjectInput{
-			Body:        f,
-			Bucket:      &(p.Bucket),
-			Key:         &target,
-			ACL:         &(p.Access),
-			ContentType: &content,
-		}
-
-		if p.Encryption != "" {
-			putObjectInput.ServerSideEncryption = &(p.Encryption)
-		}
-
-		if p.CacheControl != "" {
-			putObjectInput.CacheControl = &(p.CacheControl)
-		}
-
-		_, err = client.PutObject(putObjectInput)
-
-		if err != nil {
-			log.WithFields(log.Fields{
-				"name":   match,
-				"bucket": p.Bucket,
-				"target": target,
-				"error":  err,
-			}).Error("Could not upload file")
-
-			return err
-		}
-		f.Close()
+	if p.Parallel == 0 {
+		p.Parallel = runtime.NumCPU()
 	}
+
+	var wg sync.WaitGroup
+	taskChan := make(chan string)
+
+	for i := 0; i < p.Parallel; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for match := range taskChan {
+				err := p.Upload(client, match)
+				if err != nil {
+					log.Errorf("upload %s failed, %s", match, err)
+				}
+			}
+		}()
+	}
+
+	for _, match := range matches {
+		taskChan <- match
+	}
+
+	wg.Wait()
 
 	return nil
 }
