@@ -214,6 +214,8 @@ func (p *Plugin) Exec() error {
 				err := p.Upload(client, match)
 				if err != nil {
 					log.Errorf("upload %s failed, %s", match, err)
+				} else {
+					log.Infof("upload %s successful", match)
 				}
 			}
 		}()
