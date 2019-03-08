@@ -223,6 +223,7 @@ func (p *Plugin) Exec() error {
 		taskChan <- match
 	}
 
+	close(taskChan)
 	wg.Wait()
 
 	return nil
