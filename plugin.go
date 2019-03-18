@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"mime"
 	"os"
 	"path/filepath"
@@ -13,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
 	"github.com/mattn/go-zglob"
-	log "github.com/sirupsen/logrus"
 )
 
 // Plugin defines the S3 plugin parameters.
@@ -104,14 +104,6 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 	// attempts to provide a proper content-type.
 	content := contentType(match)
 
-	// log file for debug purposes.
-	log.WithFields(log.Fields{
-		"name":         match,
-		"bucket":       p.Bucket,
-		"target":       target,
-		"content-type": content,
-	}).Info("Uploading file")
-
 	// when executing a dry-run we exit because we don't actually want to
 	// upload the file to S3.
 	if p.DryRun {
@@ -120,10 +112,7 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 
 	f, err := os.Open(match)
 	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err,
-			"file":  match,
-		}).Error("Problem opening file")
+		fmt.Printf("opening %s failed, %s\n", match, err)
 		return err
 	}
 
@@ -148,12 +137,8 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 	_, err = cli.PutObject(putObjectInput)
 
 	if err != nil {
-		log.WithFields(log.Fields{
-			"name":   match,
-			"bucket": p.Bucket,
-			"target": target,
-			"error":  err,
-		}).Error("Could not upload file")
+		fmt.Printf("could not upload file %q to %q, err: %s\n",
+			match, p.Bucket+"/"+p.Target, err)
 		return err
 	}
 
@@ -178,25 +163,21 @@ func (p *Plugin) Exec() error {
 	if p.Key != "" && p.Secret != "" {
 		conf.Credentials = credentials.NewStaticCredentials(p.Key, p.Secret, "")
 	} else {
-		log.Warn("AWS Key and/or Secret not provided (falling back to ec2 instance profile)")
+		fmt.Println("AWS Key and/or Secret not provided (falling back to ec2 instance profile)")
 	}
 
 	sess := session.Must(session.NewSession(conf))
 	client := s3.New(sess)
 
-	// find the bucket
-	log.WithFields(log.Fields{
-		"region":   p.Region,
-		"endpoint": p.Endpoint,
-		"bucket":   p.Bucket,
-	}).Info("Attempting to upload")
-
 	matches, err := matches(p.Source, p.Exclude)
 	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err,
-		}).Error("Could not match files")
+		fmt.Println("Could not match files")
 		return err
+	}
+
+	fmt.Println("Attempting to upload files")
+	for _, match := range matches {
+		fmt.Printf("%-32s --> %s/%s\n", match, p.Bucket, p.Target)
 	}
 
 	if p.Parallel == 0 {
@@ -213,9 +194,9 @@ func (p *Plugin) Exec() error {
 			for match := range taskChan {
 				err := p.Upload(client, match)
 				if err != nil {
-					log.Errorf("upload %s failed, %s", match, err)
+					fmt.Printf("upload %s failed, %s\n", match, err)
 				} else {
-					log.Infof("upload %s successful", match)
+					fmt.Printf("upload %s successful\n", match)
 				}
 			}
 		}()
