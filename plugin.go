@@ -187,6 +187,8 @@ func (p *Plugin) Exec() error {
 	var wg sync.WaitGroup
 	taskChan := make(chan string)
 
+	fmt.Printf("\nstart uploading files, parallel %d\n", p.Parallel)
+
 	for i := 0; i < p.Parallel; i++ {
 		wg.Add(1)
 		go func() {
