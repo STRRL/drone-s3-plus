@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/credentials"
@@ -195,11 +196,14 @@ func (p *Plugin) Exec() error {
 		go func() {
 			defer wg.Done()
 			for match := range taskChan {
+				start := time.Now()
 				err := p.Upload(client, match)
+				stop := time.Now()
+
 				if err != nil {
-					fmt.Printf("upload %s failed, %s\n", match, err)
+					fmt.Printf("upload %48s failed  %s %s\n", match, stop.Sub(start), err)
 				} else {
-					fmt.Printf("upload %s successful\n", match)
+					fmt.Printf("upload %48s success %s\n", match, stop.Sub(start))
 				}
 			}
 		}()
