@@ -177,7 +177,7 @@ func (p *Plugin) Exec() error {
 
 	fmt.Printf("Attempting to upload files, region: %s, bucket: %s\n", p.Region, p.Bucket)
 	for _, match := range matches {
-		fmt.Printf("%-32s --> %s\n", match,
+		fmt.Printf("%-48s --> %s\n", match,
 			filepath.Join(p.Target, strings.TrimPrefix(match, p.StripPrefix)))
 	}
 
