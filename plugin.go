@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/md5"
 	"fmt"
+	"io"
 	"mime"
 	"os"
 	"path/filepath"
@@ -83,6 +85,9 @@ type Plugin struct {
 	PathStyle bool
 	// Dry run without uploading/
 	DryRun bool
+
+	// set md5sum
+	MD5SHA bool
 }
 
 func (p *Plugin) Upload(cli *s3.S3, match string) error {
@@ -133,6 +138,15 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 
 	if p.CacheControl != "" {
 		putObjectInput.CacheControl = &(p.CacheControl)
+	}
+
+	if p.MD5SHA {
+		sha, err := md5sum(match)
+		if err != nil {
+			return err
+		}
+
+		putObjectInput.ContentMD5 = aws.String(sha)
 	}
 
 	_, err = cli.PutObject(putObjectInput)
@@ -265,4 +279,21 @@ func contentType(path string) string {
 		typ = "application/octet-stream"
 	}
 	return typ
+}
+
+func md5sum(path string) (string, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY, 0600)
+	if err != nil {
+		return "", err
+	}
+
+	defer f.Close()
+
+	hash := md5.New()
+	_, err = io.Copy(hash, f)
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%x", hash.Sum(nil)), nil
 }

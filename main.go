@@ -102,6 +102,11 @@ func main() {
 			Name:  "env-file",
 			Usage: "source env file",
 		},
+		cli.BoolFlag{
+			Name:   "md5sum",
+			Usage:  "set md5sum to object",
+			EnvVar: "PLUGIN_MD5SUM",
+		},
 	}
 
 	if err := app.Run(os.Args); err != nil {
@@ -131,6 +136,7 @@ func run(c *cli.Context) error {
 		PathStyle:    c.Bool("path-style"),
 		DryRun:       c.Bool("dry-run"),
 		Overwrite:    c.Bool("overwrite"),
+		MD5SHA:       c.Bool("md5sum"),
 	}
 
 	return plugin.Exec()
