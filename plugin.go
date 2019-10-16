@@ -21,19 +21,19 @@ import (
 
 // Plugin defines the S3 plugin parameters.
 type Plugin struct {
-	Endpoint string
-	Key      string
-	Secret   string
-	Bucket   string
+	Endpoint  string `envconfig:"ENDPOINT" required:"true"`
+	AccessKey string `envconfig:"ACCESS_KEY"`
+	SecretKey string `envconfig:"SECRET_KEY"`
+	Bucket    string `envconfig:"BUCKET"`
 
 	// overwrite object
-	Overwrite bool
+	Overwrite bool `envconfig:"OVERWRITE"`
 
 	// if not "", enable server-side encryption
 	// valid values are:
 	//     AES256
 	//     aws:kms
-	Encryption string
+	Encryption string `envconfig:"ENCRYPTION"`
 
 	// us-east-1
 	// us-west-1
@@ -43,7 +43,7 @@ type Plugin struct {
 	// ap-southeast-2
 	// ap-northeast-1
 	// sa-east-1
-	Region string
+	Region string `envconfig:"REGION" default:"us-east-1"`
 
 	// Indicates the files ACL, which should be one
 	// of the following:
@@ -53,13 +53,13 @@ type Plugin struct {
 	//     authenticated-read
 	//     bucket-owner-read
 	//     bucket-owner-full-control
-	Access string
+	Access string `envconfig:"ACCESS"`
 
 	// Sets the Cache-Control header on each uploaded object
-	CacheControl string
+	CacheControl string `envconfig:"CACHE_CONTROL"`
 
 	// upload files
-	Parallel int
+	Parallel int `envconfig:"PARALLEL"`
 
 	// Copies the files from the specified directory.
 	// Regexp matching will apply to match multiple
@@ -70,24 +70,24 @@ type Plugin struct {
 	//    /path/to/*.txt
 	//    /path/to/*/*.txt
 	//    /path/to/**
-	Source string
-	Target string
+	Source string `envconfig:"SOURCE" required:"true"`
+	Target string `envconfig:"TARGET"`
 
 	// Strip the prefix from the target path
-	StripPrefix string
+	StripPrefix string `envconfig:"STRIP_PREFIX"`
 
 	// Exclude files matching this pattern.
-	Exclude []string
+	Exclude []string `envconfig:"EXCLUDE"`
 
 	// Use path style instead of domain style.
 	//
 	// Should be true for minio and false for AWS.
-	PathStyle bool
+	PathStyle bool `envconfig:"PATH_STYLE"`
 	// Dry run without uploading/
-	DryRun bool
+	DryRun bool `envconfig:"DRY_RUN"`
 
 	// set md5sum
-	MD5SHA bool
+	MD5SHA bool `envconfig:"MD5SHA"`
 }
 
 func (p *Plugin) Upload(cli *s3.S3, match string) error {
@@ -101,9 +101,9 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 		return nil
 	}
 
-	target := filepath.Join(p.Target, strings.TrimPrefix(match, p.StripPrefix))
-	if !strings.HasPrefix(target, "/") {
-		target = "/" + target
+	key := strings.TrimPrefix(match, p.StripPrefix)
+	if p.Target != "" {
+		key = p.Target
 	}
 
 	// amazon S3 has pretty crappy default content-type headers so this pluign
@@ -126,10 +126,10 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 
 	putObjectInput := &s3.PutObjectInput{
 		Body:        f,
-		Bucket:      &(p.Bucket),
-		Key:         &target,
-		ACL:         &(p.Access),
-		ContentType: &content,
+		Bucket:      aws.String(p.Bucket),
+		Key:         aws.String(key),
+		ACL:         aws.String(p.Access),
+		ContentType: aws.String(content),
 	}
 
 	if p.Encryption != "" {
@@ -153,7 +153,7 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 
 	if err != nil {
 		fmt.Printf("could not upload file %q to %q, err: %s\n",
-			match, p.Bucket+"/"+p.Target, err)
+			match, p.Bucket+"/"+key, err)
 		return err
 	}
 
@@ -175,8 +175,8 @@ func (p *Plugin) Exec() error {
 		S3ForcePathStyle: aws.Bool(p.PathStyle),
 	}
 
-	if p.Key != "" && p.Secret != "" {
-		conf.Credentials = credentials.NewStaticCredentials(p.Key, p.Secret, "")
+	if p.AccessKey != "" && p.SecretKey != "" {
+		conf.Credentials = credentials.NewStaticCredentials(p.AccessKey, p.SecretKey, "")
 	} else {
 		fmt.Println("AWS Key and/or Secret not provided (falling back to ec2 instance profile)")
 	}
