@@ -141,12 +141,15 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 	}
 
 	if p.MD5SHA {
-		sha, err := md5sum(match)
+		checksum, err := md5sum(match)
 		if err != nil {
 			return err
 		}
 
-		putObjectInput.ContentMD5 = aws.String(sha)
+		putObjectInput.ContentMD5 = aws.String(checksum)
+		fmt.Println(match, "md5sum", checksum)
+	} else {
+		fmt.Println("md5sum not enabled")
 	}
 
 	_, err = cli.PutObject(putObjectInput)
