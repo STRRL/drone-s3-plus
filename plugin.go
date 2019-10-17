@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/md5"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -87,7 +88,7 @@ type Plugin struct {
 	DryRun bool `envconfig:"DRY_RUN"`
 
 	// set md5sum
-	MD5SHA bool `envconfig:"MD5SHA"`
+	MD5SHA bool `envconfig:"MD5SHA" default:"true"`
 }
 
 func (p *Plugin) Upload(cli *s3.S3, match string) error {
@@ -141,15 +142,19 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 	}
 
 	if p.MD5SHA {
-		checksum, err := md5sum(match)
+		sum, err := contentMD5(match)
 		if err != nil {
 			return err
 		}
 
-		putObjectInput.ContentMD5 = aws.String(checksum)
-		fmt.Println(match, "md5sum", checksum)
-	} else {
-		fmt.Println("md5sum not enabled")
+		hc := make([]byte, base64.StdEncoding.EncodedLen(len(sum)))
+		base64.StdEncoding.Encode(hc, sum)
+
+		putObjectInput.ContentMD5 = aws.String(string(hc))
+		if putObjectInput.Metadata == nil {
+			putObjectInput.Metadata = make(map[string]*string)
+		}
+		putObjectInput.Metadata["MD5SUM"] = aws.String(fmt.Sprintf("%x", sum))
 	}
 
 	_, err = cli.PutObject(putObjectInput)
@@ -284,10 +289,10 @@ func contentType(path string) string {
 	return typ
 }
 
-func md5sum(path string) (string, error) {
+func contentMD5(path string) ([]byte, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY, 0600)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	defer f.Close()
@@ -295,8 +300,8 @@ func md5sum(path string) (string, error) {
 	hash := md5.New()
 	_, err = io.Copy(hash, f)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return fmt.Sprintf("%x", hash.Sum(nil)), nil
+	return hash.Sum(nil), nil
 }
