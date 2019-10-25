@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/f1shl3gs/drone-template"
 	"github.com/mattn/go-zglob"
 )
 
@@ -92,7 +93,7 @@ type Plugin struct {
 	MD5SHA bool `envconfig:"MD5SHA" default:"true"`
 }
 
-func (p *Plugin) Upload(cli *s3.S3, match string) error {
+func (p *Plugin) Upload(cli *s3.S3, match, key string) error {
 	stat, err := os.Stat(match)
 	if err != nil {
 		return err // should never happen
@@ -105,7 +106,6 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 
 	// amazon S3 has pretty crappy default content-type headers so this pluign
 	// attempts to provide a proper content-type.
-	key := p.targetKey(match)
 	content := contentType(match)
 
 	// when executing a dry-run we exit because we don't actually want to
@@ -201,7 +201,12 @@ func (p *Plugin) Exec() error {
 
 	fmt.Printf("Attempting to upload files, region: %s, bucket: %s\n", p.Region, p.Bucket)
 	for _, match := range matches {
-		fmt.Printf("%-48s --> %s\n", match, p.targetKey(match))
+		key, err := p.targetKey(match)
+		if err != nil {
+			return fmt.Errorf("generate target key failed, %s", err)
+		}
+
+		fmt.Printf("%-48s --> %s\n", match, key)
 	}
 
 	if p.Parallel == 0 {
@@ -218,14 +223,17 @@ func (p *Plugin) Exec() error {
 		go func() {
 			defer wg.Done()
 			for match := range taskChan {
+				// error checked before
+				key, _ := p.targetKey(match)
+
 				start := time.Now()
-				err := p.Upload(client, match)
+				err = p.Upload(client, match, key)
 				stop := time.Now()
 
 				if err != nil {
-					fmt.Printf("upload %48s failed  %s %s\n", p.targetKey(match), stop.Sub(start), err)
+					fmt.Printf("upload %48s failed  %s %s\n", key, stop.Sub(start), err)
 				} else {
-					fmt.Printf("upload %48s success %s\n", p.targetKey(match), stop.Sub(start))
+					fmt.Printf("upload %48s success %s\n", key, stop.Sub(start))
 				}
 			}
 		}()
@@ -241,12 +249,16 @@ func (p *Plugin) Exec() error {
 	return nil
 }
 
-func (p *Plugin) targetKey(match string) string {
+func (p *Plugin) targetKey(match string) (string, error) {
+	var key string
+
 	if p.Target != "" {
-		return p.Target
+		key = p.Target
+	} else {
+		key = strings.TrimPrefix(match, p.StripPrefix)
 	}
 
-	return strings.TrimPrefix(match, p.StripPrefix)
+	return template.Execute(key)
 }
 
 // matches is a helper function that returns a list of all files matching the

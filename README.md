@@ -9,6 +9,7 @@ Drone plugin to publish files and artifacts to Amazon S3 or Minio
 - upload concurrently, it will save you a lot time if you have a lot artifacts
 - better output, artifacts size and time for upload will be print
 - support dry-run, debug only
+- support `template` for target key
 
 ## Usage
 
