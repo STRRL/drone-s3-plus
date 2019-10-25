@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/md5"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -102,13 +103,9 @@ func (p *Plugin) Upload(cli *s3.S3, match string) error {
 		return nil
 	}
 
-	key := strings.TrimPrefix(match, p.StripPrefix)
-	if p.Target != "" {
-		key = p.Target
-	}
-
 	// amazon S3 has pretty crappy default content-type headers so this pluign
 	// attempts to provide a proper content-type.
+	key := p.targetKey(match)
 	content := contentType(match)
 
 	// when executing a dry-run we exit because we don't actually want to
@@ -198,10 +195,13 @@ func (p *Plugin) Exec() error {
 		return err
 	}
 
+	if p.Target != "" && len(matches) != 1 {
+		return errors.New("multi matches found while target is set")
+	}
+
 	fmt.Printf("Attempting to upload files, region: %s, bucket: %s\n", p.Region, p.Bucket)
 	for _, match := range matches {
-		fmt.Printf("%-48s --> %s\n", match,
-			filepath.Join(p.Target, strings.TrimPrefix(match, p.StripPrefix)))
+		fmt.Printf("%-48s --> %s\n", match, p.targetKey(match))
 	}
 
 	if p.Parallel == 0 {
@@ -223,9 +223,9 @@ func (p *Plugin) Exec() error {
 				stop := time.Now()
 
 				if err != nil {
-					fmt.Printf("upload %48s failed  %s %s\n", match, stop.Sub(start), err)
+					fmt.Printf("upload %48s failed  %s %s\n", p.targetKey(match), stop.Sub(start), err)
 				} else {
-					fmt.Printf("upload %48s success %s\n", match, stop.Sub(start))
+					fmt.Printf("upload %48s success %s\n", p.targetKey(match), stop.Sub(start))
 				}
 			}
 		}()
@@ -239,6 +239,14 @@ func (p *Plugin) Exec() error {
 	wg.Wait()
 
 	return nil
+}
+
+func (p *Plugin) targetKey(match string) string {
+	if p.Target != "" {
+		return p.Target
+	}
+
+	return strings.TrimPrefix(match, p.StripPrefix)
 }
 
 // matches is a helper function that returns a list of all files matching the
